@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Paper Reader</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <div class="header">
+        <h1>📄 AI Paper Reader</h1>
+        <div class="header-controls">
+            <input type="file" id="pdfUpload" accept=".pdf" style="display: none;">
+            <button class="btn btn-primary" onclick="document.getElementById('pdfUpload').click()">
+                📁 上传 PDF
+            </button>
+            <button class="btn btn-secondary" id="translateBtn" disabled>
+                🌐 翻译全文
+            </button>
+            <button class="btn btn-icon" onclick="openSettings()" title="设置">
+                ⚙️ 设置
+            </button>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚙️ API 设置</h2>
+                <button class="modal-close" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- 当前临时密钥 -->
+                <div class="setting-item">
+                    <label>🔑 当前小时临时密钥</label>
+                    <div class="temp-key-container">
+                        <code id="tempKeyDisplay">生成中...</code>
+                        <button class="btn-small" id="copyTempKeyBtn">📋 复制</button>
+                    </div>
+                    <small>每小时自动更新，点击复制后粘贴到下方</small>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 20px 0;">
+
+                <div class="setting-item">
+                    <label for="masterKeyInput">输入临时密钥</label>
+                    <input type="text" id="masterKeyInput" placeholder="粘贴上方复制的密钥">
+                    <small>粘贴密钥后点击保存即可使用</small>
+                </div>
+
+                <!-- 使用额度显示 -->
+                <div id="usageInfo"></div>
+
+                <div class="setting-status" id="settingStatus"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeSettings()">关闭</button>
+                <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容区 - 左右双栏 -->
+    <div class="main-container">
+        <!-- 左侧：原文 PDF -->
+        <div class="panel left-panel">
+            <div class="panel-header">
+                <h2>📜 原文</h2>
+                <span id="pageInfo" class="page-info"></span>
+            </div>
+            <div class="panel-content" id="pdfContainer">
+                <div class="placeholder">
+                    <p>👆 请上传 PDF 文件</p>
+                </div>
+            </div>
+            <div class="panel-footer" id="pdfControls" style="display: none;">
+                <button class="nav-btn" onclick="prevPage()">◀ 上一页</button>
+                <span id="currentPage">第 1 页</span>
+                <button class="nav-btn" onclick="nextPage()">下一页 ▶</button>
+            </div>
+        </div>
+
+        <!-- 右侧：翻译结果 + 问答 -->
+        <div class="panel right-panel">
+            <div class="panel-header">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="translation" onclick="switchTab('translation')">
+                        🇨🇳 翻译
+                    </button>
+                    <button class="tab-btn" data-tab="qa" onclick="switchTab('qa')">
+                        💬 问答
+                    </button>
+                </div>
+                <div class="loading-indicator" id="loadingIndicator" style="display: none;">
+                    <span class="spinner"></span>
+                    <span id="loadingText">翻译中...</span>
+                </div>
+            </div>
+
+            <!-- 翻译内容 -->
+            <div class="panel-content tab-content active" id="translationTab">
+                <div class="panel-content-inner" id="translationContainer">
+                    <div class="placeholder">
+                        <p>📖 点击"翻译全文"开始翻译</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 问答内容 -->
+            <div class="panel-content tab-content" id="qaTab">
+                <div class="panel-content-inner qa-container">
+                    <div id="qaHistory" class="qa-history">
+                        <div class="placeholder">
+                            <p>💬 基于 PDF 内容提问</p>
+                        </div>
+                    </div>
+                    <div class="qa-questions-area">
+                        <div class="qa-questions-label">📌 快速提问：</div>
+                        <div class="qa-questions-grid">
+                            <button class="question-chip" onclick="askPresetQuestion('这篇文章的主要观点是什么？')">主要观点</button>
+                            <button class="question-chip" onclick="askPresetQuestion('文章用了什么研究方法？')">研究方法</button>
+                            <button class="question-chip" onclick="askPresetQuestion('这篇文章的结论是什么？')">研究结论</button>
+                            <button class="question-chip" onclick="askPresetQuestion('文章的核心创新点在哪里？')">创新点</button>
+                            <button class="question-chip" onclick="askPresetQuestion('解释一下文章中的关键术语')">关键术语</button>
+                            <button class="question-chip" onclick="askPresetQuestion('这篇文章的研究背景是什么？')">研究背景</button>
+                            <button class="question-chip" onclick="askPresetQuestion('文章的实验结果如何？')">实验结果</button>
+                            <button class="question-chip" onclick="askPresetQuestion('总结这篇文章的局限性')">局限性</button>
+                        </div>
+                    </div>
+                    <div class="qa-input-area">
+                        <input type="text" id="questionInput" placeholder="输入问题..." onkeypress="handleQuestionEnter(event)">
+                        <button class="btn btn-primary" onclick="askQuestion()" id="askBtn" disabled>
+                            发送
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-footer" id="translationControls" style="display: none;">
+                <button class="nav-btn" onclick="prevTranslationPage()">◀ 上一页</button>
+                <span id="currentTranslationPage">第 1 页</span>
+                <button class="nav-btn" onclick="nextTranslationPage()">下一页 ▶</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
